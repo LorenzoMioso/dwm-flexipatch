@@ -76,6 +76,7 @@
 #define Button8                 8
 #define Button9                 9
 #define NUMTAGS                 13
+#define NUMVIEWHIST             NUMTAGS
 #define BARRULES                20
 #if TAB_PATCH
 #define MAXTABS                 50
@@ -487,7 +488,11 @@ struct Monitor {
 	#endif // SETBORDERPX_PATCH
 	unsigned int seltags;
 	unsigned int sellt;
+	#if VIEW_HISTORY_PATCH
+	unsigned int tagset[NUMVIEWHIST];
+	#else
 	unsigned int tagset[2];
+	#endif // VIEW_HISTORY_PATCH
 	int showbar;
 	#if TAB_PATCH
 	int showtab;
@@ -701,8 +706,10 @@ static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
 static void setup(void);
 static void seturgent(Client *c, int urg);
-static void showhide(Client *c);
+#if COOL_AUTOSTART_PATCH
 static void sigchld(int unused);
+#endif // COOL_AUTOSTART_PATCH
+static void showhide(Client *c);
 static void spawn(const Arg *arg);
 #if RIODRAW_PATCH
 static pid_t spawncmd(const Arg *arg);
@@ -1594,10 +1601,13 @@ createmon(void)
 	#endif // MONITOR_RULES_PATCH
 
 	m = ecalloc(1, sizeof(Monitor));
-	#if EMPTYVIEW_PATCH
-	m->tagset[0] = m->tagset[1] = 0;
+	#if !EMPTYVIEW_PATCH
+	#if VIEW_HISTORY_PATCH
+	for (i = 0; i < LENGTH(m->tagset); i++)
+		m->tagset[i] = 1;
 	#else
 	m->tagset[0] = m->tagset[1] = 1;
+	#endif // VIEW_HISTORY_PATCH
 	#endif // EMPTYVIEW_PATCH
 	m->mfact = mfact;
 	m->nmaster = nmaster;
@@ -1689,7 +1699,7 @@ createmon(void)
 	#if PERTAG_PATCH
 	if (!(m->pertag = (Pertag *)calloc(1, sizeof(Pertag))))
 		die("fatal: could not malloc() %u bytes\n", sizeof(Pertag));
-	m->pertag->curtag = m->pertag->prevtag = 1;
+	m->pertag->curtag = 1;
 	for (i = 0; i <= NUMTAGS; i++) {
 		#if FLEXTILE_DELUXE_LAYOUT
 		m->pertag->nstacks[i] = m->nstack;
@@ -3640,9 +3650,21 @@ setup(void)
 	XkbStateRec xkbstate;
 	#endif // XKB_PATCH
 	Atom utf8string;
-
+	#if COOL_AUTOSTART_PATCH
 	/* clean up any zombies immediately */
 	sigchld(0);
+	#else
+	struct sigaction sa;
+
+	/* do not transform children into zombies when they terminate */
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
+	sa.sa_handler = SIG_IGN;
+	sigaction(SIGCHLD, &sa, NULL);
+
+	/* clean up any zombies (inherited from .xinitrc etc) immediately */
+	while (waitpid(-1, NULL, WNOHANG) > 0);
+	#endif // COOL_AUTOSTART_PATCH
 
 	#if RESTARTSIG_PATCH
 	signal(SIGHUP, sighup);
@@ -3923,15 +3945,15 @@ showhide(Client *c)
 	}
 }
 
+#if COOL_AUTOSTART_PATCH
 void
 sigchld(int unused)
 {
-	#if COOL_AUTOSTART_PATCH
 	pid_t pid;
-	#endif // COOL_AUTOSTART_PATCH
+
 	if (signal(SIGCHLD, sigchld) == SIG_ERR)
 		die("can't install SIGCHLD handler:");
-	#if COOL_AUTOSTART_PATCH
+
 	while (0 < (pid = waitpid(-1, NULL, WNOHANG))) {
 		pid_t *p, *lim;
 
@@ -3946,10 +3968,8 @@ sigchld(int unused)
 			}
 		}
 	}
-	#else
-	while (0 < waitpid(-1, NULL, WNOHANG));
-	#endif // COOL_AUTOSTART_PATCH
 }
+#endif // COOL_AUTOSTART_PATCH
 
 #if RIODRAW_PATCH
 void
@@ -4263,12 +4283,10 @@ toggleview(const Arg *arg)
 		if (newtagset == ~0)
 		#endif // SCRATCHPADS_PATCH
 		{
-			selmon->pertag->prevtag = selmon->pertag->curtag;
 			selmon->pertag->curtag = 0;
 		}
 		/* test if the user did not select the same tag */
 		if (!(newtagset & 1 << (selmon->pertag->curtag - 1))) {
-			selmon->pertag->prevtag = selmon->pertag->curtag;
 			for (i = 0; !(newtagset & 1 << i); i++) ;
 			selmon->pertag->curtag = i + 1;
 		}
@@ -4352,7 +4370,7 @@ unfocus(Client *c, int setfocus, Client *nextfocus)
 void
 unmanage(Client *c, int destroyed)
 {
-	Monitor *m = c->mon;
+	Monitor *m;
 	#if SWITCHTAG_PATCH
 	unsigned int switchtag = c->switchtag;
 	#endif // SWITCHTAG_PATCH
@@ -4360,6 +4378,24 @@ unmanage(Client *c, int destroyed)
 	#if XKB_PATCH
 	XkbInfo *xkb;
 	#endif // XKB_PATCH
+
+	#if ZOOMSWAP_PATCH
+	/* Make sure to clear any previous zoom references to the client being removed. */
+	#if PERTAG_PATCH
+	int i;
+	for (m = mons; m; m = m->next) {
+		for (i = 0; i <= NUMTAGS; i++) {
+			if (m->pertag->prevzooms[i] == c) {
+				m->pertag->prevzooms[i] = NULL;
+			}
+		}
+	}
+	#else
+	if (c == prevzoom)
+		prevzoom = NULL;
+	#endif // PERTAG_PATCH
+	#endif // ZOOMSWAP_PATCH
+	m = c->mon;
 
 	#if SWALLOW_PATCH
 	if (c->swallowing) {
@@ -4891,12 +4927,24 @@ view(const Arg *arg)
 	#if BAR_TAGPREVIEW_PATCH
 	tagpreviewswitchtag();
 	#endif // BAR_TAGPREVIEW_PATCH
-	selmon->seltags ^= 1; /* toggle sel tagset */
-	#if PERTAG_PATCH
-	pertagview(arg);
+	#if VIEW_HISTORY_PATCH
+	if (!arg->ui) {
+		selmon->seltags += 1;
+		if (selmon->seltags == LENGTH(selmon->tagset))
+			selmon->seltags = 0;
+	} else {
+		if (selmon->seltags == 0)
+			selmon->seltags = LENGTH(selmon->tagset) - 1;
+		else
+			selmon->seltags -= 1;
+	}
 	#else
+	selmon->seltags ^= 1; /* toggle sel tagset */
+	#endif // VIEW_HISTORY_PATCH
 	if (arg->ui & TAGMASK)
 		selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
+	#if PERTAG_PATCH
+	pertagview(arg);
 	#endif // PERTAG_PATCH
 	#if TAGSYNC_PATCH
 	}
