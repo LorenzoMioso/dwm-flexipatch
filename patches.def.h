@@ -445,7 +445,7 @@
  * that if using flexipatch-finalizer this must be explicitly enabled.
  * https://github.com/bakkeby/patches/blob/master/dwm/dwm-barmodules-wintitleactions-6.2.diff
  */
-#define BAR_WINTITLEACTIONS_PATCH                                              \
+#define BAR_WINTITLEACTIONS_PATCH \
   BAR_AWESOMEBAR_PATCH || BAR_TABGROUPS_PATCH || BAR_FLEXWINTITLE_PATCH
 
 /***
@@ -662,6 +662,12 @@
  * of client order. https://github.com/bakkeby/patches/wiki/focusdir/
  */
 #define FOCUSDIR_PATCH 0
+
+/* When changing tags, closing windows or moving clients out of view then focus will revert to the
+ * client window that remains under the mouse cursor rather than the most recently focused window.
+ * https://github.com/bakkeby/patches/wiki/focusfollowmouse
+ */
+#define FOCUSFOLLOWMOUSE_PATCH 0
 
 /* A simple patch that just puts focus back to the master client.
  * https://dwm.suckless.org/patches/focusmaster/
@@ -907,7 +913,7 @@
  */
 #define PERTAG_PATCH 1
 
-/* Option to store gaps on a per tag basis rather than on a per monitor basis.
+/* Option to enable gaps on a per tag basis rather than globally.
  * Depends on both pertag and vanitygaps patches being enabled.
  */
 #define PERTAG_VANITYGAPS_PATCH 1
@@ -1295,8 +1301,13 @@
  */
 #define TOGGLEFULLSCREEN_PATCH 0
 
-/* Minor patch that lets you use the same keyboard shortcut to toggle to the
- * previous layout if the designated layout is already active.
+/* This patch allows for the bar position (top or bottom) to be toggled during runtime.
+ * https://dwm.suckless.org/patches/toggletopbar/
+ */
+#define TOGGLETOPBAR_PATCH 0
+
+/* Minor patch that lets you use the same keyboard shortcut to toggle to the previous layout if the
+ * designated layout is already active.
  *
  * This allows you to use e.g. MOD+m to change to the monocle layout and use the
  * same keybinding to toggle back to what it was previously. The default
@@ -1340,8 +1351,15 @@
  */
 #define UNFLOATVISIBLE_PATCH 0
 
-/* This patch adds configurable gaps between windows differentiating between
- * outer, inner, horizontal and vertical gaps.
+/* This patch adds a client rule that allows for windows that do not specify the override-redirect
+ * to not be managed by the window manager. This can be useful for external bars, widgets,
+ * launchers, docks, desktop icons and more.
+ * https://github.com/bakkeby/patches/wiki/unmanaged
+ */
+#define UNMANAGED_PATCH 0
+
+/* This patch adds configurable gaps between windows differentiating between outer, inner,
+ * horizontal and vertical gaps.
  * https://github.com/bakkeby/patches/blob/master/dwm/dwm-vanitygaps-6.2.diff
  * https://github.com/bakkeby/patches/blob/master/dwm/dwm-cfacts-vanitygaps-6.2.diff
  */
