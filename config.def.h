@@ -1,5 +1,9 @@
 /* See LICENSE file for copyright and license details. */
 
+/* Helper macros for spawning commands */
+#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
+#define CMD(...)   { .v = (const char*[]){ __VA_ARGS__, NULL } }
+
 /* appearance */
 #if ROUNDED_CORNERS_PATCH
 static const unsigned int borderpx       = 3;   /* border pixel of windows */
@@ -399,6 +403,13 @@ static char *statuscolors[][ColCount] = {
 static const char *layoutmenu_cmd = "layoutmenu.sh";
 #endif
 
+#if BAR_LAUNCHER_PATCH
+static const Launcher launchers[] = {
+	/* icon to display      command        */
+	{ "surf",               CMD("surf", "duckduckgo.com") },
+};
+#endif // BAR_LAUNCHER_PATCH
+
 #if COOL_AUTOSTART_PATCH
 static const char *const autostart[] = {
 	"st", NULL,
@@ -552,6 +563,9 @@ static const BarRule barrules[] = {
 	#if BAR_STATUSBUTTON_PATCH
 	{ -1,        0,     BAR_ALIGN_LEFT,   width_stbutton,           draw_stbutton,          click_stbutton,          NULL,                    "statusbutton" },
 	#endif // BAR_STATUSBUTTON_PATCH
+	#if BAR_LAUNCHER_PATCH
+	{ -1,        0,     BAR_ALIGN_LEFT,   width_launcher,           draw_launcher,          click_launcher,          NULL,                    "launcher" },
+	#endif // BAR_LAUNCHER_PATCH
 	#if BAR_POWERLINE_TAGS_PATCH
 	{  0,        0,     BAR_ALIGN_LEFT,   width_pwrl_tags,          draw_pwrl_tags,         click_pwrl_tags,         hover_pwrl_tags,         "powerline_tags" },
 	#endif // BAR_POWERLINE_TAGS_PATCH
@@ -851,9 +865,6 @@ static const char *xkb_layouts[]  = {
 #define HOLDKEY 0 // replace 0 with the keysym to activate holdbar
 #endif // BAR_HOLDBAR_PATCH
 
-/* helper for spawning shell commands in the pre dwm-5.0 fashion */
-#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
-
 /* commands */
 #if !NODMENU_PATCH
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */
@@ -899,6 +910,108 @@ static const Key on_empty_keys[] = {
 };
 #endif // ON_EMPTY_KEYS_PATCH
 
+#if XRESOURCES_PATCH
+/*
+* Xresources preferences to load at startup.
+*
+*     Name                      Type       Address
+*    ------------------------------------------------
+*     "nmaster"                 INTEGER    &nmaster
+*     "mfact"                   FLOAT      &mfact
+*     "color1"                  STRING     &color1
+*
+* In the Xresources file setting resources shoud be prefixed with "dwm.", e.g.
+*
+*    dwm.nmaster: 1
+*    dwm.mfact: 0.50
+*    dwm.color1: #FA6EFA
+*
+* Note that the const qualifier must be removed from the variables if you plan on
+* overriding them with values from Xresources. While resources can be reloaded
+* using the xrdb function some changes may only take effect following a restart.
+*/
+ResourcePref resources[] = {
+	/* Resource name            Type       Address                */
+	{ "normfgcolor",            STRING,    &normfgcolor },
+	{ "normbgcolor",            STRING,    &normbgcolor },
+	{ "normbordercolor",        STRING,    &normbordercolor },
+	{ "normfloatcolor",         STRING,    &normfloatcolor },
+	{ "selfgcolor",             STRING,    &selfgcolor },
+	{ "selbgcolor",             STRING,    &selbgcolor },
+	{ "selbordercolor",         STRING,    &selbordercolor },
+	{ "selfloatcolor",          STRING,    &selfloatcolor },
+	{ "titlenormfgcolor",       STRING,    &titlenormfgcolor },
+	{ "titlenormbgcolor",       STRING,    &titlenormbgcolor },
+	{ "titlenormbordercolor",   STRING,    &titlenormbordercolor },
+	{ "titlenormfloatcolor",    STRING,    &titlenormfloatcolor },
+	{ "titleselfgcolor",        STRING,    &titleselfgcolor },
+	{ "titleselbgcolor",        STRING,    &titleselbgcolor },
+	{ "titleselbordercolor",    STRING,    &titleselbordercolor },
+	{ "titleselfloatcolor",     STRING,    &titleselfloatcolor },
+	{ "tagsnormfgcolor",        STRING,    &tagsnormfgcolor },
+	{ "tagsnormbgcolor",        STRING,    &tagsnormbgcolor },
+	{ "tagsnormbordercolor",    STRING,    &tagsnormbordercolor },
+	{ "tagsnormfloatcolor",     STRING,    &tagsnormfloatcolor },
+	{ "tagsselfgcolor",         STRING,    &tagsselfgcolor },
+	{ "tagsselbgcolor",         STRING,    &tagsselbgcolor },
+	{ "tagsselbordercolor",     STRING,    &tagsselbordercolor },
+	{ "tagsselfloatcolor",      STRING,    &tagsselfloatcolor },
+	{ "hidnormfgcolor",         STRING,    &hidnormfgcolor },
+	{ "hidnormbgcolor",         STRING,    &hidnormbgcolor },
+	{ "hidselfgcolor",          STRING,    &hidselfgcolor },
+	{ "hidselbgcolor",          STRING,    &hidselbgcolor },
+	{ "urgfgcolor",             STRING,    &urgfgcolor },
+	{ "urgbgcolor",             STRING,    &urgbgcolor },
+	{ "urgbordercolor",         STRING,    &urgbordercolor },
+	{ "urgfloatcolor",          STRING,    &urgfloatcolor },
+	#if RENAMED_SCRATCHPADS_PATCH
+	{ "scratchselfgcolor",      STRING,    &scratchselfgcolor },
+	{ "scratchselbgcolor",      STRING,    &scratchselbgcolor },
+	{ "scratchselbordercolor",  STRING,    &scratchselbordercolor },
+	{ "scratchselfloatcolor",   STRING,    &scratchselfloatcolor },
+	{ "scratchnormfgcolor",     STRING,    &scratchnormfgcolor },
+	{ "scratchnormbgcolor",     STRING,    &scratchnormbgcolor },
+	{ "scratchnormbordercolor", STRING,    &scratchnormbordercolor },
+	{ "scratchnormfloatcolor",  STRING,    &scratchnormfloatcolor },
+	#endif // RENAMED_SCRATCHPADS_PATCH
+	#if BAR_FLEXWINTITLE_PATCH
+	{ "normTTBbgcolor",         STRING,    &normTTBbgcolor },
+	{ "normLTRbgcolor",         STRING,    &normLTRbgcolor },
+	{ "normMONObgcolor",        STRING,    &normMONObgcolor },
+	{ "normGRIDbgcolor",        STRING,    &normGRIDbgcolor },
+	{ "normGRD1bgcolor",        STRING,    &normGRD1bgcolor },
+	{ "normGRD2bgcolor",        STRING,    &normGRD2bgcolor },
+	{ "normGRDMbgcolor",        STRING,    &normGRDMbgcolor },
+	{ "normHGRDbgcolor",        STRING,    &normHGRDbgcolor },
+	{ "normDWDLbgcolor",        STRING,    &normDWDLbgcolor },
+	{ "normSPRLbgcolor",        STRING,    &normSPRLbgcolor },
+	{ "normfloatbgcolor",       STRING,    &normfloatbgcolor },
+	{ "actTTBbgcolor",          STRING,    &actTTBbgcolor },
+	{ "actLTRbgcolor",          STRING,    &actLTRbgcolor },
+	{ "actMONObgcolor",         STRING,    &actMONObgcolor },
+	{ "actGRIDbgcolor",         STRING,    &actGRIDbgcolor },
+	{ "actGRD1bgcolor",         STRING,    &actGRD1bgcolor },
+	{ "actGRD2bgcolor",         STRING,    &actGRD2bgcolor },
+	{ "actGRDMbgcolor",         STRING,    &actGRDMbgcolor },
+	{ "actHGRDbgcolor",         STRING,    &actHGRDbgcolor },
+	{ "actDWDLbgcolor",         STRING,    &actDWDLbgcolor },
+	{ "actSPRLbgcolor",         STRING,    &actSPRLbgcolor },
+	{ "actfloatbgcolor",        STRING,    &actfloatbgcolor },
+	{ "selTTBbgcolor",          STRING,    &selTTBbgcolor },
+	{ "selLTRbgcolor",          STRING,    &selLTRbgcolor },
+	{ "selMONObgcolor",         STRING,    &selMONObgcolor },
+	{ "selGRIDbgcolor",         STRING,    &selGRIDbgcolor },
+	{ "selGRD1bgcolor",         STRING,    &selGRD1bgcolor },
+	{ "selGRD2bgcolor",         STRING,    &selGRD2bgcolor },
+	{ "selGRDMbgcolor",         STRING,    &selGRDMbgcolor },
+	{ "selHGRDbgcolor",         STRING,    &selHGRDbgcolor },
+	{ "selDWDLbgcolor",         STRING,    &selDWDLbgcolor },
+	{ "selSPRLbgcolor",         STRING,    &selSPRLbgcolor },
+	{ "selfloatbgcolor",        STRING,    &selfloatbgcolor },
+	#endif // BAR_FLEXWINTITLE_PATCH
+};
+#endif // XRESOURCES_PATCH
+
 static const Key keys[] = {
 	/* modifier                     key            function                argument */
 	#if KEYMODES_PATCH
@@ -918,9 +1031,9 @@ static const Key keys[] = {
 	#if TAB_PATCH
 	{ MODKEY|ControlMask,           XK_b,          tabmode,                {-1} },
 	#endif // TAB_PATCH
-	#if FOCUSMASTER_PATCH
+	#if FOCUSMASTER_PATCH || FOCUSMASTER_RETURN_PATCH
 	{ MODKEY|ControlMask,           XK_space,      focusmaster,            {0} },
-	#endif // FOCUSMASTER_PATCH
+	#endif // FOCUSMASTER_PATCH / FOCUSMASTER_RETURN_PATCH
 	#if STACKER_PATCH
 	STACKKEYS(MODKEY,                              focus)
 	STACKKEYS(MODKEY|ShiftMask,                    push)
@@ -934,6 +1047,12 @@ static const Key keys[] = {
 	{ MODKEY,                       XK_Up,         focusdir,               {.i = 2 } }, // up
 	{ MODKEY,                       XK_Down,       focusdir,               {.i = 3 } }, // down
 	#endif // FOCUSDIR_PATCH
+	#if PLACEDIR_PATCH
+	{ MODKEY|ControlMask,           XK_Left,       placedir,               {.i = 0 } }, // left
+	{ MODKEY|ControlMask,           XK_Right,      placedir,               {.i = 1 } }, // right
+	{ MODKEY|ControlMask,           XK_Up,         placedir,               {.i = 2 } }, // up
+	{ MODKEY|ControlMask,           XK_Down,       placedir,               {.i = 3 } }, // down
+	#endif // PLACEDIR_PATCH
 	#if SWAPFOCUS_PATCH && PERTAG_PATCH
 	{ MODKEY,                       XK_s,          swapfocus,              {.i = -1 } },
 	#endif // SWAPFOCUS_PATCH
@@ -1041,8 +1160,8 @@ static const Key keys[] = {
 	{ MODKEY|Mod4Mask,              XK_backslash,  shiftviewclients,       { .i = +1 } },
 	#endif // SHIFTVIEW_CLIENTS_PATCH
 	#if SHIFTBOTH_PATCH
-	{ MODKEY|ControlMask,           XK_Left,       shiftboth,              { .i = -1 } }, // note keybinding conflict with focusadjacenttag tagandviewtoleft
-	{ MODKEY|ControlMask,           XK_Right,      shiftboth,              { .i = +1 } }, // note keybinding conflict with focusadjacenttag tagandviewtoright
+	{ MODKEY|ControlMask,           XK_Left,       shiftboth,              { .i = -1 } }, // note keybinding conflict with focusadjacenttag tagandviewtoleft placedir
+	{ MODKEY|ControlMask,           XK_Right,      shiftboth,              { .i = +1 } }, // note keybinding conflict with focusadjacenttag tagandviewtoright placedir
 	#endif // SHIFTBOTH_PATCH
 	#if SHIFTSWAPTAGS_PATCH && SWAPTAGS_PATCH
 	{ MODKEY|Mod4Mask|ShiftMask,    XK_Left,       shiftswaptags,          { .i = -1 } },
@@ -1050,6 +1169,7 @@ static const Key keys[] = {
 	#endif // SHIFTSWAPTAGS_PATCH
 	#if BAR_WINTITLEACTIONS_PATCH
 	{ MODKEY|ControlMask,           XK_z,          showhideclient,         {0} },
+	{ MODKEY|ControlMask,           XK_s,          unhideall,              {0} },
 	#endif // BAR_WINTITLEACTIONS_PATCH
 	{ MODKEY|ShiftMask,             XK_c,          killclient,             {0} },
 	#if KILLUNSEL_PATCH
@@ -1071,9 +1191,9 @@ static const Key keys[] = {
 	#if WINVIEW_PATCH
 	{ MODKEY,                       XK_o,          winview,                {0} },
 	#endif // WINVIEW_PATCH
-	#if XRDB_PATCH && !BAR_VTCOLORS_PATCH
+	#if XRDB_PATCH || XRESOURCES_PATCH
 	{ MODKEY|ShiftMask,             XK_F5,         xrdb,                   {.v = NULL } },
-	#endif // XRDB_PATCH
+	#endif // XRDB_PATCH | XRESOURCES_PATCH
 	{ MODKEY,                       XK_t,          setlayout,              {.v = &layouts[0]} },
 	{ MODKEY,                       XK_f,          setlayout,              {.v = &layouts[1]} },
 	{ MODKEY,                       XK_m,          setlayout,              {.v = &layouts[2]} },
@@ -1150,8 +1270,8 @@ static const Key keys[] = {
 	{ MODKEY,                       XK_Right,      viewtoright,            {0} }, // note keybinding conflict with focusdir
 	{ MODKEY|ShiftMask,             XK_Left,       tagtoleft,              {0} }, // note keybinding conflict with shifttag
 	{ MODKEY|ShiftMask,             XK_Right,      tagtoright,             {0} }, // note keybinding conflict with shifttag
-	{ MODKEY|ControlMask,           XK_Left,       tagandviewtoleft,       {0} },
-	{ MODKEY|ControlMask,           XK_Right,      tagandviewtoright,      {0} },
+	{ MODKEY|ControlMask,           XK_Left,       tagandviewtoleft,       {0} }, // note keybinding conflict with placedir
+	{ MODKEY|ControlMask,           XK_Right,      tagandviewtoright,      {0} }, // note keybinding conflict with placedir
 	#endif // FOCUSADJACENTTAG_PATCH
 	#if TAGALL_PATCH
 	{ MODKEY|ShiftMask,             XK_F1,         tagall,                 {.v = "F1"} },
@@ -1190,8 +1310,8 @@ static const Key keys[] = {
 	#if BAR_TAGGRID_PATCH
 	{ MODKEY|ControlMask,           XK_Up,         switchtag,              { .ui = SWITCHTAG_UP    | SWITCHTAG_VIEW } },
 	{ MODKEY|ControlMask,           XK_Down,       switchtag,              { .ui = SWITCHTAG_DOWN  | SWITCHTAG_VIEW } },
-	{ MODKEY|ControlMask,           XK_Right,      switchtag,              { .ui = SWITCHTAG_RIGHT | SWITCHTAG_VIEW } },
-	{ MODKEY|ControlMask,           XK_Left,       switchtag,              { .ui = SWITCHTAG_LEFT  | SWITCHTAG_VIEW } },
+	{ MODKEY|ControlMask,           XK_Right,      switchtag,              { .ui = SWITCHTAG_RIGHT | SWITCHTAG_VIEW } }, // note keybinding conflict with placedir
+	{ MODKEY|ControlMask,           XK_Left,       switchtag,              { .ui = SWITCHTAG_LEFT  | SWITCHTAG_VIEW } }, // note keybinding conflict with placedir
 	{ MODKEY|Mod4Mask,              XK_Up,         switchtag,              { .ui = SWITCHTAG_UP    | SWITCHTAG_TAG | SWITCHTAG_VIEW } },
 	{ MODKEY|Mod4Mask,              XK_Down,       switchtag,              { .ui = SWITCHTAG_DOWN  | SWITCHTAG_TAG | SWITCHTAG_VIEW } },
 	{ MODKEY|Mod4Mask,              XK_Right,      switchtag,              { .ui = SWITCHTAG_RIGHT | SWITCHTAG_TAG | SWITCHTAG_VIEW } },
@@ -1579,9 +1699,9 @@ static const Signal signals[] = {
 	#if WINVIEW_PATCH
 	{ "winview",                 winview },
 	#endif // WINVIEW_PATCH
-	#if XRDB_PATCH && !BAR_VTCOLORS_PATCH
+	#if XRDB_PATCH || XRESOURCES_PATCH
 	{ "xrdb",                    xrdb },
-	#endif // XRDB_PATCH
+	#endif // XRDB_PATCH | XRESOURCES_PATCH
 	#if TAGOTHERMONITOR_PATCH
 	{ "tagnextmonex",            tagnextmonex },
 	{ "tagprevmonex",            tagprevmonex },
@@ -1779,8 +1899,8 @@ static IPCCommand ipccommands[] = {
 	#if WINVIEW_PATCH
 	IPCCOMMAND( winview, 1, {ARG_TYPE_NONE} ),
 	#endif // WINVIEW_PATCH
-	#if XRDB_PATCH && !BAR_VTCOLORS_PATCH
+	#if XRDB_PATCH || XRESOURCES_PATCH
 	IPCCOMMAND( xrdb, 1, {ARG_TYPE_NONE} ),
-	#endif // XRDB_PATCH
+	#endif // XRDB_PATCH | XRESOURCES_PATCH
 };
 #endif // IPC_PATCH

@@ -101,7 +101,6 @@
 #else
 #define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]))
 #endif // ATTACHASIDE_PATCH
-#define LENGTH(X)               (sizeof X / sizeof X[0])
 #define MOUSEMASK               (BUTTONMASK|PointerMotionMask)
 #define WIDTH(X)                ((X)->w + 2 * (X)->bw)
 #define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
@@ -482,6 +481,9 @@ struct Monitor {
 	int gappiv;           /* vertical gap between windows */
 	int gappoh;           /* horizontal outer gaps */
 	int gappov;           /* vertical outer gaps */
+	#if PERMON_VANITYGAPS_PATCH
+	int enablegaps;       /* whether gaps are enabled  */
+	#endif // PERMON_VANITYGAPS_PATCH
 	#endif // VANITYGAPS_PATCH
 	#if SETBORDERPX_PATCH
 	int borderpx;
@@ -504,6 +506,9 @@ struct Monitor {
 	Client *clients;
 	Client *sel;
 	Client *stack;
+	#if FOCUSMASTER_RETURN_PATCH
+	Client *tagmarked[32];
+	#endif // FOCUSMASTER_RETURN_PATCH
 	Monitor *next;
 	Bar *bar;
 	const Layout *lt[2];
@@ -574,10 +579,17 @@ typedef struct {
 	#if XKB_PATCH
 	int xkb_layout;
 	#endif // XKB_PATCH
+	#if BORDER_RULE_PATCH
+	int bw;
+	#endif // BORDER_RULE_PATCH
 } Rule;
 
-#if XKB_PATCH
+#if BORDER_RULE_PATCH && XKB_PATCH
+#define RULE(...) { .monitor = -1, .xkb_layout = -1, .bw = -1, __VA_ARGS__ },
+#elif XKB_PATCH
 #define RULE(...) { .monitor = -1, .xkb_layout = -1, __VA_ARGS__ },
+#elif BORDER_RULE_PATCH
+#define RULE(...) { .monitor = -1, .bw = -1, __VA_ARGS__ },
 #else
 #define RULE(...) { .monitor = -1, __VA_ARGS__ },
 #endif // XKB_PATCH
@@ -682,6 +694,9 @@ static void maprequest(XEvent *e);
 static void motionnotify(XEvent *e);
 static void movemouse(const Arg *arg);
 static Client *nexttiled(Client *c);
+#if NOBORDER_PATCH
+static int noborder(Client *c);
+#endif // NOBORDER_PATCH
 #if !ZOOMSWAP_PATCH || TAGINTOSTACK_ALLMASTER_PATCH || TAGINTOSTACK_ONEMASTER_PATCH
 static void pop(Client *c);
 #endif // !ZOOMSWAP_PATCH / TAGINTOSTACK_ALLMASTER_PATCH / TAGINTOSTACK_ONEMASTER_PATCH
@@ -911,6 +926,10 @@ applyrules(Client *c)
 			#if CENTER_PATCH
 			c->iscentered = r->iscentered;
 			#endif // CENTER_PATCH
+			#if BORDER_RULE_PATCH
+			if (r->bw != -1)
+				c->bw = r->bw;
+			#endif // BORDER_RULE_PATCH
 			#if ISPERMANENT_PATCH
 			c->ispermanent = r->ispermanent;
 			#endif // ISPERMANENT_PATCH
@@ -959,6 +978,7 @@ applyrules(Client *c)
 			if (r->switchtag)
 			#endif // SWALLOW_PATCH
 			{
+				unfocus(selmon->sel, 1, NULL);
 				selmon = c->mon;
 				if (r->switchtag == 2 || r->switchtag == 4)
 					newtagset = c->mon->tagset[c->mon->seltags] ^ c->tags;
@@ -1102,6 +1122,11 @@ arrange(Monitor *m)
 void
 arrangemon(Monitor *m)
 {
+	#if BAR_PADDING_SMART_PATCH
+	updatebarpos(selmon);
+	for (Bar *bar = selmon->bar; bar; bar = bar->next)
+		XMoveResizeWindow(dpy, bar->win, bar->bx, bar->by, bar->bw, bar->bh);
+	#endif // BAR_PADDING_SMART_PATCH
 	#if TAB_PATCH
 	updatebarpos(m);
 	XMoveResizeWindow(dpy, m->tabwin, m->wx, m->ty, m->ww, th);
@@ -1455,6 +1480,15 @@ configure(Client *c)
 	ce.width = c->w;
 	ce.height = c->h;
 	ce.border_width = c->bw;
+
+	#if NOBORDER_PATCH
+	if (noborder(c)) {
+		ce.width += c->bw * 2;
+		ce.height += c->bw * 2;
+		ce.border_width = 0;
+	}
+	#endif // NOBORDER_PATCH
+
 	ce.above = None;
 	ce.override_redirect = False;
 	XSendEvent(dpy, c->win, False, StructureNotifyMask, (XEvent *)&ce);
@@ -1766,6 +1800,10 @@ createmon(void)
 	}
 	#endif // PERTAG_PATCH
 
+	#if PERMON_VANITYGAPS_PATCH
+	m->enablegaps = 1;
+	#endif // PERMON_VANITYGAPS_PATCH
+
 	#if SEAMLESS_RESTART_PATCH
 	restoremonitorstate(m);
 	#endif // SEAMLESS_RESTART_PATCH
@@ -1818,6 +1856,11 @@ detach(Client *c)
 	#if SEAMLESS_RESTART_PATCH
 	c->idx = 0;
 	#endif // SEAMLESS_RESTART_PATCH
+	#if FOCUSMASTER_RETURN_PATCH
+	for (int i = 1; i < NUMTAGS; i++)
+		if (c == c->mon->tagmarked[i])
+			c->mon->tagmarked[i] = NULL;
+	#endif // FOCUSMASTER_RETURN_PATCH
 
 	for (tc = &c->mon->clients; *tc && *tc != c; tc = &(*tc)->next);
 	*tc = c->next;
@@ -2046,6 +2089,10 @@ focus(Client *c)
 	if (!c || !ISVISIBLE(c))
 		c = getpointerclient();
 	#endif // FOCUSFOLLOWMOUSE_PATCH
+	#if STICKY_PATCH
+	if (!c || !ISVISIBLE(c))
+		for (c = selmon->stack; c && (!ISVISIBLE(c) || c->issticky); c = c->snext);
+	#endif // STICKY_PATCH
 	if (!c || !ISVISIBLE(c))
 		for (c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
 	if (selmon->sel && selmon->sel != c)
@@ -2480,8 +2527,10 @@ manage(Window w, XWindowAttributes *wa)
 		#endif // CENTER_TRANSIENT_WINDOWS_PATCH | CENTER_TRANSIENT_WINDOWS_BY_PARENT_PATCH | CENTER_PATCH
 	} else {
 		#if SEAMLESS_RESTART_PATCH
-		if (!settings_restored)
+		if (!settings_restored || c->mon == NULL) {
 			c->mon = selmon;
+			settings_restored = 0;
+		}
 		#else
 		c->mon = selmon;
 		#endif // SEAMLESS_RESTART_PATCH
@@ -2838,10 +2887,63 @@ nexttiled(Client *c)
 	return c;
 }
 
+#if NOBORDER_PATCH
+int
+noborder(Client *c)
+{
+	int monocle_layout = 0;
+
+	#if MONOCLE_LAYOUT
+	if (&monocle == c->mon->lt[c->mon->sellt]->arrange)
+		monocle_layout = 1;
+	#endif // MONOCLE_LAYOUT
+
+	#if DECK_LAYOUT
+	if (&deck == c->mon->lt[c->mon->sellt]->arrange && c->mon->nmaster == 0)
+		monocle_layout = 1;
+	#endif // DECK_LAYOUT
+
+	#if FLEXTILE_DELUXE_LAYOUT
+	if (&flextile == c->mon->lt[c->mon->sellt]->arrange && (
+		(c->mon->ltaxis[LAYOUT] == NO_SPLIT && c->mon->ltaxis[MASTER] == MONOCLE) ||
+		(c->mon->ltaxis[STACK] == MONOCLE && c->mon->nmaster == 0)
+	)) {
+		monocle_layout = 1;
+	}
+	#endif //FLEXTILE_DELUXE_LAYOUT
+
+	if (!monocle_layout && (nexttiled(c->mon->clients) != c || nexttiled(c->next)))
+		return 0;
+
+	if (c->isfloating)
+		return 0;
+
+	if (!c->mon->lt[c->mon->sellt]->arrange)
+		return 0;
+
+	#if FAKEFULLSCREEN_CLIENT_PATCH && !FAKEFULLSCREEN_PATCH
+	if (c->fakefullscreen != 1 && c->isfullscreen)
+		return 0;
+	#elif !FAKEFULLSCREEN_PATCH
+	if (c->isfullscreen)
+		return 0;
+	#endif // FAKEFULLSCREEN_CLIENT_PATCH
+
+	return 1;
+}
+#endif // NOBORDER_PATCH
+
 #if !ZOOMSWAP_PATCH || TAGINTOSTACK_ALLMASTER_PATCH || TAGINTOSTACK_ONEMASTER_PATCH
 void
 pop(Client *c)
 {
+	#if FOCUSMASTER_RETURN_PATCH
+	int i;
+	for (i = 0; !(selmon->tagset[selmon->seltags] & 1 << i); i++);
+	i++;
+
+	c->mon->tagmarked[i] = nexttiled(c->mon->clients);
+	#endif // FOCUSMASTER_RETURN_PATCH
 	detach(c);
 	attach(c);
 	focus(c);
@@ -2985,31 +3087,9 @@ resizeclient(Client *c, int x, int y, int w, int h)
 	drawroundedcorners(c);
 	#endif // ROUNDED_CORNERS_PATCH
 	#if NOBORDER_PATCH
-	if (((nexttiled(c->mon->clients) == c && !nexttiled(c->next))
-		#if MONOCLE_LAYOUT
-		|| &monocle == c->mon->lt[c->mon->sellt]->arrange
-		#endif // MONOCLE_LAYOUT
-		#if DECK_LAYOUT
-		|| (&deck == c->mon->lt[c->mon->sellt]->arrange &&
-			c->mon->nmaster == 0)
-		#endif // DECK_LAYOUT
-		#if FLEXTILE_DELUXE_LAYOUT
-		|| (&flextile == c->mon->lt[c->mon->sellt]->arrange && (
-			(c->mon->ltaxis[LAYOUT] == NO_SPLIT &&
-			 c->mon->ltaxis[MASTER] == MONOCLE) ||
-			(c->mon->ltaxis[STACK] == MONOCLE &&
-			 c->mon->nmaster == 0)))
-		#endif //FLEXTILE_DELUXE_LAYOUT
-		)
-		#if FAKEFULLSCREEN_CLIENT_PATCH && !FAKEFULLSCREEN_PATCH
-		&& (c->fakefullscreen == 1 || !c->isfullscreen)
-		#else
-		&& !c->isfullscreen
-		#endif // FAKEFULLSCREEN_CLIENT_PATCH
-		&& !c->isfloating
-		&& c->mon->lt[c->mon->sellt]->arrange) {
-		c->w = wc.width += c->bw * 2;
-		c->h = wc.height += c->bw * 2;
+	if (noborder(c)) {
+		wc.width += c->bw * 2;
+		wc.height += c->bw * 2;
 		wc.border_width = 0;
 	}
 	#endif // NOBORDER_PATCH
@@ -3243,7 +3323,6 @@ run(void)
 				event_fd, events[i].data.ptr, events[i].data.u32,
 				events[i].data.u64);
 				fprintf(stderr, " with events %d\n", events[i].events);
-				return;
 			}
 		}
 	}
@@ -3364,6 +3443,14 @@ sendmon(Client *c, Monitor *m)
 	#else
 	c->tags = m->tagset[m->seltags]; /* assign tags of target monitor */
 	#endif // EMPTYVIEW_PATCH
+	#if SENDMON_CENTER_PATCH
+	c->x = m->mx + (m->mw - WIDTH(c)) / 2;
+	c->y = m->my + (m->mh - HEIGHT(c)) / 2;
+	#if SAVEFLOATS_PATCH
+	c->sfx = m->mx + (m->mw - c->sfw - 2 * c->bw) / 2;
+	c->sfy = m->my + (m->mh - c->sfh - 2 * c->bw) / 2;
+	#endif // SAVEFLOATS_PATCH
+	#endif // SENDMON_CENTER_PATCH
 	#if ATTACHABOVE_PATCH || ATTACHASIDE_PATCH || ATTACHBELOW_PATCH || ATTACHBOTTOM_PATCH
 	attachx(c);
 	#else
@@ -4206,10 +4293,21 @@ togglefloating(const Arg *arg)
 	#endif // !FAKEFULLSCREEN_PATCH
 	c->isfloating = !c->isfloating || c->isfixed;
 	#if !BAR_FLEXWINTITLE_PATCH
+	#if RENAMED_SCRATCHPADS_PATCH
+	if (c->scratchkey != 0 && c->isfloating)
+		XSetWindowBorder(dpy, c->win, scheme[SchemeScratchSel][ColFloat].pixel);
+	else if (c->scratchkey != 0)
+		XSetWindowBorder(dpy, c->win, scheme[SchemeScratchSel][ColBorder].pixel);
+	else if (c->isfloating)
+		XSetWindowBorder(dpy, c->win, scheme[SchemeSel][ColFloat].pixel);
+	else
+		XSetWindowBorder(dpy, c->win, scheme[SchemeSel][ColBorder].pixel);
+	#else
 	if (c->isfloating)
 		XSetWindowBorder(dpy, c->win, scheme[SchemeSel][ColFloat].pixel);
 	else
 		XSetWindowBorder(dpy, c->win, scheme[SchemeSel][ColBorder].pixel);
+	#endif // RENAMED_SCRATCHPADS_PATCH
 	#endif // BAR_FLEXWINTITLE_PATCH
 	if (c->isfloating) {
 		#if SAVEFLOATS_PATCH || EXRESIZE_PATCH
@@ -4474,7 +4572,8 @@ unmanage(Client *c, int destroyed)
 		XSelectInput(dpy, c->win, NoEventMask);
 		XConfigureWindow(dpy, c->win, CWBorderWidth, &wc); /* restore border */
 		XUngrabButton(dpy, AnyButton, AnyModifier, c->win);
-		setclientstate(c, WithdrawnState);
+		if (!HIDDEN(c))
+			setclientstate(c, WithdrawnState);
 		XSync(dpy, False);
 		XSetErrorHandler(xerror);
 		XUngrabServer(dpy);
@@ -4624,16 +4723,36 @@ updatebarpos(Monitor *m)
 	#if BAR_PADDING_VANITYGAPS_PATCH && VANITYGAPS_PATCH
 	#if PERTAG_VANITYGAPS_PATCH && PERTAG_PATCH
 	if (!selmon || selmon->pertag->enablegaps[selmon->pertag->curtag])
+	#elif PERMON_VANITYGAPS_PATCH
+	if (!selmon || selmon->enablegaps)
 	#else
 	if (enablegaps)
 	#endif // PERTAG_VANITYGAPS_PATCH
 	{
+		#if BAR_PADDING_SMART_PATCH
+		unsigned int n; Client *c;
+		for (n = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), n++);
+		if (n > 1) {
+			y_pad = gappoh;
+			x_pad = gappov;
+		}
+		#else
 		y_pad = gappoh;
 		x_pad = gappov;
+		#endif // BAR_PADDING_SMART_PATCH
 	}
 	#elif BAR_PADDING_PATCH
+	#if BAR_PADDING_SMART_PATCH
+	unsigned int n; Client *c;
+	for (n = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), n++);
+	if (n > 1) {
+		y_pad = vertpad;
+		x_pad = sidepad;
+	}
+	#else
 	y_pad = vertpad;
 	x_pad = sidepad;
+	#endif // BAR_PADDING_SMART_PATCH
 	#endif // BAR_PADDING_PATCH | BAR_PADDING_VANITYGAPS_PATCH
 
 	#if INSETS_PATCH
@@ -4688,7 +4807,7 @@ updatebarpos(Monitor *m)
 }
 
 void
-updateclientlist()
+updateclientlist(void)
 {
 	Client *c;
 	Monitor *m;
@@ -5082,6 +5201,9 @@ void
 zoom(const Arg *arg)
 {
 	Client *c = selmon->sel;
+	#if FOCUSMASTER_RETURN_PATCH && ZOOMSWAP_PATCH
+	int i;
+	#endif // FOCUSMASTER_RETURN_PATCH
 	if (arg && arg->v)
 		c = (Client*)arg->v;
 	if (!c)
@@ -5135,6 +5257,12 @@ zoom(const Arg *arg)
 	cold = nexttiled(c->mon->clients);
 	if (c != cold && !at)
 		at = findbefore(c);
+	#if FOCUSMASTER_RETURN_PATCH
+	for (i = 0; !(selmon->tagset[selmon->seltags] & 1 << i); i++);
+	i++;
+
+	c->mon->tagmarked[i] = cold;
+	#endif // FOCUSMASTER_RETURN_PATCH
 	detach(c);
 	attach(c);
 	/* swap windows instead of pushing the previous one down */
@@ -5227,10 +5355,10 @@ main(int argc, char *argv[])
 		die("dwm: cannot get xcb connection\n");
 	#endif // SWALLOW_PATCH
 	checkotherwm();
-	#if XRDB_PATCH && !BAR_VTCOLORS_PATCH
+	#if XRESOURCES_PATCH || XRDB_PATCH
 	XrmInitialize();
-	loadxrdb();
-	#endif // XRDB_PATCH && !BAR_VTCOLORS_PATCH
+	load_xresources();
+	#endif // XRESOURCES_PATCH | XRDB_PATCH
 	#if COOL_AUTOSTART_PATCH
 	autostart_exec();
 	#endif // COOL_AUTOSTART_PATCH
