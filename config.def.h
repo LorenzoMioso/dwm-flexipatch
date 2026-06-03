@@ -114,6 +114,7 @@ static const unsigned int ulinepad = 5;         /* horizontal padding between th
 static const unsigned int ulinestroke  = 2;     /* thickness / height of the underline */
 static const unsigned int ulinevoffset = 0;     /* how far above the bottom of the bar the line should appear */
 static const int ulineall = 0;                  /* 1 to show underline on all tags, 0 for just the active ones */
+static const int ulinetop = 0;                  /* 1 to show the underline above the tags, rather than under */
 #endif // BAR_UNDERLINETAGS_PATCH
 
 #if NAMETAG_PATCH
@@ -150,6 +151,9 @@ static int floatindicatortype            = INDICATOR_NONE;
 static int fakefsindicatortype           = INDICATOR_PLUS;
 static int floatfakefsindicatortype      = INDICATOR_PLUS_AND_LARGER_SQUARE;
 #endif // FAKEFULLSCREEN_CLIENT_PATCH
+#if ALWAYSONTOP_PATCH
+static int aotindicatortype              = INDICATOR_TOP_LEFT_LARGER_SQUARE;
+#endif // ALWAYSONTOP_PATCH
 #if ONLYQUITONEMPTY_PATCH
 static const int quit_empty_window_count = 0;   /* only allow dwm to quit if no (<= count) windows are open */
 #endif // ONLYQUITONEMPTY_PATCH
@@ -211,6 +215,11 @@ static char urgfgcolor[]                 = "#bbbbbb";
 static char urgbgcolor[]                 = "#222222";
 static char urgbordercolor[]             = "#ff0000";
 static char urgfloatcolor[]              = "#db8fd9";
+
+#if BAR_LTSYMBOL_SCHEME_PATCH
+static char ltsymbolfgcolor[]            = "#222222";
+static char ltsymbolbgcolor[]            = "#fe9877";
+#endif // BAR_LTSYMBOL_SCHEME_PATCH
 
 #if RENAMED_SCRATCHPADS_PATCH
 static char scratchselfgcolor[]          = "#FFF7D4";
@@ -274,6 +283,9 @@ static const unsigned int alphas[][3] = {
 	[SchemeHidNorm]      = { OPAQUE, baralpha, borderalpha },
 	[SchemeHidSel]       = { OPAQUE, baralpha, borderalpha },
 	[SchemeUrg]          = { OPAQUE, baralpha, borderalpha },
+	#if BAR_LTSYMBOL_SCHEME_PATCH
+	[SchemeLtSymbol]     = { OPAQUE, baralpha, borderalpha },
+	#endif // BAR_LTSYMBOL_SCHEME_PATCH
 	#if RENAMED_SCRATCHPADS_PATCH
 	[SchemeScratchSel]  = { OPAQUE, baralpha, borderalpha },
 	[SchemeScratchNorm] = { OPAQUE, baralpha, borderalpha },
@@ -329,6 +341,9 @@ static const int color_ptrs[][ColCount] = {
 	[SchemeHidNorm]      = { 5,      0,      0,      -1 },
 	[SchemeHidSel]       = { 6,      -1,     -1,     -1 },
 	[SchemeUrg]          = { 7,      9,      9,      15 },
+	#if BAR_LTSYMBOL_SCHEME_PATCH
+	[SchemeLtSymbol]     = { -1,     3,      0,       0 },
+	#endif // BAR_LTSYMBOL_SCHEME_PATCH
 };
 #endif // BAR_VTCOLORS_PATCH
 
@@ -343,6 +358,9 @@ static char *colors[][ColCount] = {
 	[SchemeHidNorm]      = { hidnormfgcolor,   hidnormbgcolor,   c000000,              c000000 },
 	[SchemeHidSel]       = { hidselfgcolor,    hidselbgcolor,    c000000,              c000000 },
 	[SchemeUrg]          = { urgfgcolor,       urgbgcolor,       urgbordercolor,       urgfloatcolor },
+	#if BAR_LTSYMBOL_SCHEME_PATCH
+	[SchemeLtSymbol]     = { ltsymbolfgcolor,  ltsymbolbgcolor,  c000000,              c000000 },
+	#endif // BAR_LTSYMBOL_SCHEME_PATCH
 	#if RENAMED_SCRATCHPADS_PATCH
 	[SchemeScratchSel]  = { scratchselfgcolor, scratchselbgcolor, scratchselbordercolor, scratchselfloatcolor },
 	[SchemeScratchNorm] = { scratchnormfgcolor, scratchnormbgcolor, scratchnormbordercolor, scratchnormfloatcolor },
@@ -648,6 +666,16 @@ static const int nstack      = 0;    /* number of clients in primary stack area 
 #endif // FLEXTILE_DELUXE_LAYOUT
 static const int resizehints = 0;    /* 1 means respect size hints in tiled resizals */
 static const int lockfullscreen = 1; /* 1 will force focus on the fullscreen window */
+static const int refreshrate = 120;  /* refresh rate (per second) for client move/resize */
+#if PLACEMOUSE_PATCH
+static const int refreshrate_placemouse = 60; /* refresh rate (per second) for placemouse */
+#endif // PLACEMOUSE_PATCH
+#if DRAGMFACT_PATCH
+static const int refreshrate_dragmfact = 40; /* refresh rate (per second) for dragmfact */
+#endif // DRAGMFACT_PATCH
+#if DRAGCFACT_PATCH
+static const int refreshrate_dragcfact = 60; /* refresh rate (per second) for dragcfact */
+#endif // DRAGCFACT_PATCH
 #if DECORATION_HINTS_PATCH
 static const int decorhints  = 1;    /* 1 means respect decoration hints */
 #endif // DECORATION_HINTS_PATCH
@@ -1009,6 +1037,10 @@ ResourcePref resources[] = {
 	{ "selSPRLbgcolor",         STRING,    &selSPRLbgcolor },
 	{ "selfloatbgcolor",        STRING,    &selfloatbgcolor },
 	#endif // BAR_FLEXWINTITLE_PATCH
+	#if BAR_LTSYMBOL_SCHEME_PATCH
+	{ "ltsymbolfgcolor",        STRING,    &ltsymbolfgcolor },
+	{ "ltsymbolbgcolor",        STRING,    &ltsymbolbgcolor },
+	#endif // BAR_LTSYMBOL_SCHEME_PATCH
 };
 #endif // XRESOURCES_PATCH
 
@@ -1170,6 +1202,8 @@ static const Key keys[] = {
 	#if BAR_WINTITLEACTIONS_PATCH
 	{ MODKEY|ControlMask,           XK_z,          showhideclient,         {0} },
 	{ MODKEY|ControlMask,           XK_s,          unhideall,              {0} },
+	{ MODKEY|Mod1Mask,              XK_j,          focusstack,             {.i = +2 } }, // The +/-2 allows focusstack to also focus on hidden
+	{ MODKEY|Mod1Mask,              XK_k,          focusstack,             {.i = -2 } }, // i.e. minimized clients.
 	#endif // BAR_WINTITLEACTIONS_PATCH
 	{ MODKEY|ShiftMask,             XK_c,          killclient,             {0} },
 	#if KILLUNSEL_PATCH
@@ -1215,6 +1249,9 @@ static const Key keys[] = {
 	#endif // FLEXTILE_DELUXE_LAYOUT
 	{ MODKEY,                       XK_space,      setlayout,              {0} },
 	{ MODKEY|ShiftMask,             XK_space,      togglefloating,         {0} },
+	#if ALWAYSONTOP_PATCH
+	{ MODKEY|ShiftMask,             XK_space,      togglealwaysontop,      {0} },
+	#endif // ALWAYSONTOP_PATCH
 	#if MAXIMIZE_PATCH
 	{ MODKEY|ControlMask|ShiftMask, XK_h,          togglehorizontalmax,    {0} },
 	{ MODKEY|ControlMask|ShiftMask, XK_l,          togglehorizontalmax,    {0} },
@@ -1317,6 +1354,9 @@ static const Key keys[] = {
 	{ MODKEY|Mod4Mask,              XK_Right,      switchtag,              { .ui = SWITCHTAG_RIGHT | SWITCHTAG_TAG | SWITCHTAG_VIEW } },
 	{ MODKEY|Mod4Mask,              XK_Left,       switchtag,              { .ui = SWITCHTAG_LEFT  | SWITCHTAG_TAG | SWITCHTAG_VIEW } },
 	#endif // BAR_TAGGRID_PATCH
+	#if MOVECENTER_PATCH
+	{ MODKEY,                       XK_x,          movecenter,             {0} }, // note keybinding conflict with killunsel
+	#endif // MOVECENTER_PATCH
 	#if MOVEPLACE_PATCH
 	{ MODKEY,                       XK_KP_7,       moveplace,              {.ui = WIN_NW }},   /* XK_KP_Home,  */
 	{ MODKEY,                       XK_KP_8,       moveplace,              {.ui = WIN_N  }},   /* XK_KP_Up,    */
@@ -1502,7 +1542,12 @@ static const Button buttons[] = {
 	{ ClkClientWin,         MODKEY,              Button1,        movemouse,      {0} },
 	#endif // PLACEMOUSE_PATCH
 	{ ClkClientWin,         MODKEY,              Button2,        togglefloating, {0} },
+	#if DRAGFACT_PATCH && CFACTS_PATCH
+	{ ClkClientWin,         MODKEY,              Button3,        resizeorfacts,  {0} },
+	{ ClkClientWin,         MODKEY|ShiftMask,    Button3,        resizemouse,    {0} },
+	#else
 	{ ClkClientWin,         MODKEY,              Button3,        resizemouse,    {0} },
+	#endif // DRAGFACT_PATCH
 	#if TAPRESIZE_PATCH
 	{ ClkClientWin,         MODKEY,              Button4,        resizemousescroll, {.v = &scrollargs[0]} },
 	{ ClkClientWin,         MODKEY,              Button5,        resizemousescroll, {.v = &scrollargs[1]} },
@@ -1581,6 +1626,9 @@ static const Signal signals[] = {
 	#if CFACTS_PATCH
 	{ "setcfact",                setcfact },
 	#endif // CFACTS_PATCH
+	#if MOVECENTER_PATCH
+	{ "movecenter",              movecenter },
+	#endif // MOVECENTER_PATCH
 	#if MOVEPLACE_PATCH
 	{ "moveplace",               moveplace },
 	#endif // MOVEPLACE_PATCH
@@ -1801,6 +1849,9 @@ static IPCCommand ipccommands[] = {
 	IPCCOMMAND( mpdchange, 1, {ARG_TYPE_SINT} ),
 	IPCCOMMAND( mpdcontrol, 1, {ARG_TYPE_NONE} ),
 	#endif // MPDCONTROL_PATCH
+	#if MOVECENTER_PATCH
+	IPCCOMMAND( movecenter, 1, {ARG_TYPE_NONE} ),
+	#endif // MOVECENTER_PATCH
 	#if MOVEPLACE_PATCH
 	IPCCOMMAND( moveplace, 1, {ARG_TYPE_UINT} ),
 	#endif // MOVEPLACE_PATCH

@@ -104,6 +104,9 @@
 #if ALT_TAB_PATCH
 #include "alttab.h"
 #endif
+#if ALWAYSONTOP_PATCH
+#include "alwaysontop.h"
+#endif
 #if ASPECTRESIZE_PATCH
 #include "aspectresize.h"
 #endif
@@ -112,6 +115,12 @@
 #endif
 #if AUTOSTART_PATCH
 #include "autostart.h"
+#endif
+#if BANISH_PATCH || PLACEMOUSE_PATCH
+#include "recttoclient.h"
+#endif
+#if BANISH_PATCH
+#include "banish.h"
 #endif
 #if CFACTS_PATCH
 #include "cfacts.h"
@@ -133,6 +142,9 @@
 #endif
 #if DRAGCFACT_PATCH && CFACTS_PATCH
 #include "dragcfact.h"
+#endif
+#if DRAGFACT_PATCH && CFACTS_PATCH
+#include "dragfact.h"
 #endif
 #if DRAGMFACT_PATCH
 #include "dragmfact.h"
@@ -169,6 +181,9 @@
 #if FULLSCREEN_PATCH
 #include "fullscreen.h"
 #endif
+#if GAMES_PATCH
+#include "games.h"
+#endif
 #if INPLACEROTATE_PATCH
 #include "inplacerotate.h"
 #endif
@@ -191,6 +206,9 @@
 #endif
 #if MPDCONTROL_PATCH
 #include "mpdcontrol.h"
+#endif
+#if MOVECENTER_PATCH
+#include "movecenter.h"
 #endif
 #if MOVEPLACE_PATCH
 #include "moveplace.h"

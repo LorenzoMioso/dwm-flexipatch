@@ -132,6 +132,9 @@ enum {
 	#if DRAGCFACT_PATCH
 	CurIronCross,
 	#endif // DRAGCFACT_PATCH
+	#if DRAGFACT_PATCH
+	CurDragFact,
+	#endif // DRAGFACT_PATCH
 	CurNormal,
 	CurResize,
 	CurMove,
@@ -148,6 +151,9 @@ enum {
 	SchemeHidNorm,
 	SchemeHidSel,
 	SchemeUrg,
+	#if BAR_LTSYMBOL_SCHEME_PATCH
+	SchemeLtSymbol,
+	#endif // BAR_LTSYMBOL_SCHEME_PATCH
 	#if RENAMED_SCRATCHPADS_PATCH
 	SchemeScratchSel,
 	SchemeScratchNorm,
@@ -264,14 +270,14 @@ enum {
 #if IPC_PATCH
 typedef struct TagState TagState;
 struct TagState {
-       int selected;
-       int occupied;
-       int urgent;
+	int selected;
+	int occupied;
+	int urgent;
 };
 
 typedef struct ClientState ClientState;
 struct ClientState {
-       int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
+	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
 };
 #endif // IPC_PATCH
 
@@ -363,9 +369,15 @@ struct Client {
 	unsigned int switchtag;
 	#endif // SWITCHTAG_PATCH
 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
+	#if ALWAYSONTOP_PATCH
+	int alwaysontop;
+	#endif // ALWAYSONTOP_PATCH
 	#if !FAKEFULLSCREEN_PATCH && FAKEFULLSCREEN_CLIENT_PATCH
 	int fakefullscreen;
 	#endif // FAKEFULLSCREEN_CLIENT_PATCH
+	#if GAMES_PATCH
+	int isgame;
+	#endif // GAMES_PATCH
 	#if EXRESIZE_PATCH
 	unsigned char expandmask;
 	int expandx1, expandy1, expandx2, expandy2;
@@ -582,6 +594,9 @@ typedef struct {
 	#if BORDER_RULE_PATCH
 	int bw;
 	#endif // BORDER_RULE_PATCH
+	#if GAMES_PATCH
+	int isgame;
+	#endif // GAMES_PATCH
 } Rule;
 
 #if BORDER_RULE_PATCH && XKB_PATCH
@@ -726,6 +741,7 @@ static void seturgent(Client *c, int urg);
 static void sigchld(int unused);
 #endif // COOL_AUTOSTART_PATCH
 static void showhide(Client *c);
+static int skip_bar_rule(Bar *bar, const BarRule *br);
 static void spawn(const Arg *arg);
 #if RIODRAW_PATCH
 static pid_t spawncmd(const Arg *arg);
@@ -823,6 +839,9 @@ static void (*handler[LASTEvent]) (XEvent *) = {
 	[EnterNotify] = enternotify,
 	#endif // FOCUSONCLICK_PATCH
 	[Expose] = expose,
+	#if BANISH_PATCH
+	[GenericEvent] = genericevent,
+	#endif // BANISH_PATCH
 	[FocusIn] = focusin,
 	[KeyPress] = keypress,
 	#if COMBO_PATCH || BAR_HOLDBAR_PATCH
@@ -936,6 +955,9 @@ applyrules(Client *c)
 			#if SELECTIVEFAKEFULLSCREEN_PATCH && FAKEFULLSCREEN_CLIENT_PATCH && !FAKEFULLSCREEN_PATCH
 			c->fakefullscreen = r->isfakefullscreen;
 			#endif // SELECTIVEFAKEFULLSCREEN_PATCH
+			#if GAMES_PATCH
+			c->isgame = r->isgame;
+			#endif // GAMES_PATCH
 			#if SWALLOW_PATCH
 			c->isterminal = r->isterminal;
 			c->noswallow = r->noswallow;
@@ -1181,6 +1203,29 @@ buttonpress(XEvent *e)
 		focus(NULL);
 	}
 
+	#if BANISH_PATCH
+	c = wintoclient(ev->window);
+
+	if (!c && cursor_hidden) {
+		c = recttoclient(mouse_x, mouse_y, 1, 1, 1);
+		showcursor(NULL);
+	}
+
+	if (c) {
+		#if FOCUSONCLICK_PATCH
+		if (focusonwheel || (ev->button != Button4 && ev->button != Button5)) {
+			focus(c);
+			restack(c->mon);
+		}
+		#else
+		focus(c);
+		restack(selmon);
+		#endif // FOCUSONCLICK_PATCH
+		XAllowEvents(dpy, ReplayPointer, CurrentTime);
+		click = ClkClientWin;
+	}
+	#endif // BANISH_PATCH
+
 	for (bar = selmon->bar; bar; bar = bar->next) {
 		if (ev->window == bar->win) {
 			for (r = 0; r < LENGTH(barrules); r++) {
@@ -1224,10 +1269,13 @@ buttonpress(XEvent *e)
 	}
 	#endif // TAB_PATCH
 
+	#if !BANISH_PATCH
 	if (click == ClkRootWin && (c = wintoclient(ev->window))) {
 		#if FOCUSONCLICK_PATCH
-		if (focusonwheel || (ev->button != Button4 && ev->button != Button5))
+		if (focusonwheel || (ev->button != Button4 && ev->button != Button5)) {
 			focus(c);
+			restack(c->mon);
+		}
 		#else
 		focus(c);
 		restack(selmon);
@@ -1235,6 +1283,7 @@ buttonpress(XEvent *e)
 		XAllowEvents(dpy, ReplayPointer, CurrentTime);
 		click = ClkClientWin;
 	}
+	#endif // BANISH_PATCH
 
 	for (i = 0; i < LENGTH(buttons); i++) {
 		if (click == buttons[i].click && buttons[i].func && buttons[i].button == ev->button
@@ -1252,6 +1301,10 @@ buttonpress(XEvent *e)
 			);
 		}
 	}
+
+	#if BANISH_PATCH
+	last_button_press = now();
+	#endif // BANISH_PATCH
 }
 
 void
@@ -1419,7 +1472,7 @@ clientmessage(XEvent *e)
 			/* use parents background color */
 			swa.background_pixel = scheme[SchemeNorm][ColBg].pixel;
 			XChangeWindowAttributes(dpy, c->win, CWBackPixel, &swa);
-			sendevent(c->win, netatom[Xembed], StructureNotifyMask, CurrentTime, XEMBED_EMBEDDED_NOTIFY, 0 , systray->win, XEMBED_EMBEDDED_VERSION);
+			sendevent(c->win, xatom[Xembed], StructureNotifyMask, CurrentTime, XEMBED_EMBEDDED_NOTIFY, 0 , systray->win, XEMBED_EMBEDDED_VERSION);
 			XSync(dpy, False);
 			setclientstate(c, NormalState);
 		}
@@ -1927,7 +1980,11 @@ drawbarwin(Bar *bar)
 	const BarRule *br;
 
 	if (bar->borderpx) {
+		#if BAR_BORDER_COLBG_PATCH
+		XSetForeground(drw->dpy, drw->gc, scheme[bar->borderscheme][ColBg].pixel);
+		#else
 		XSetForeground(drw->dpy, drw->gc, scheme[bar->borderscheme][ColBorder].pixel);
+		#endif // BAR_BORDER_COLBG_PATCH
 		XFillRectangle(drw->dpy, drw->drawable, drw->gc, 0, 0, bar->bw, bar->bh);
 	}
 
@@ -1942,9 +1999,7 @@ drawbarwin(Bar *bar)
 	drw_rect(drw, lx, bar->borderpx, lw, bar->bh - 2 * bar->borderpx, 1, 1);
 	for (r = 0; r < LENGTH(barrules); r++) {
 		br = &barrules[r];
-		if (br->bar != bar->idx || !br->widthfunc || (br->monitor == 'A' && bar->mon != selmon))
-			continue;
-		if (br->monitor != 'A' && br->monitor != -1 && br->monitor != bar->mon->num)
+		if (skip_bar_rule(bar, br))
 			continue;
 		drw_setscheme(drw, scheme[SchemeNorm]);
 		warg.w = (br->alignment < BAR_ALIGN_RIGHT_LEFT ? lw : rw);
@@ -2038,6 +2093,41 @@ drawbarwin(Bar *bar)
 		drw_map(drw, bar->win, 0, 0, bar->bw, bar->bh);
 }
 
+int
+skip_bar_rule(Bar *bar, const BarRule *br)
+{
+	Monitor *m = selmon;
+
+	/* Skip if rule is for another bar */
+	if (br->bar != bar->idx)
+		return 1;
+
+	/* Skip if rule is not drawable */
+	if (!br->widthfunc)
+		return 1;
+
+	/* Special handling for rules referring to the active monitor */
+	if (br->monitor == 'A') {
+		#if BAR_SYSTRAY_PATCH
+		/* If the active monitor does not have the bars shown, then
+		 * allow the systray to show on the first monitor that has
+		 * bars shown. */
+		if (br->widthfunc == &width_systray && !m->showbar) {
+			for (m = mons; m && !m->showbar; m = m->next);
+		}
+		#endif // BAR_SYSTRAY_PATCH
+
+		/* Skip if rule is not for the designated / active monitor */
+		if (bar->mon != m)
+			return 1;
+	/* Skip if the rule is for another monitor */
+	} else if (br->monitor != -1 && br->monitor != bar->mon->num) {
+		return 1;
+	}
+
+	return 0;
+}
+
 #if !FOCUSONCLICK_PATCH
 void
 enternotify(XEvent *e)
@@ -2048,6 +2138,11 @@ enternotify(XEvent *e)
 	#endif // LOSEFULLSCREEN_PATCH
 	Monitor *m;
 	XCrossingEvent *ev = &e->xcrossing;
+
+	#if BANISH_PATCH
+	if (cursor_hidden)
+		return;
+	#endif // BANISH_PATCH
 
 	if ((ev->mode != NotifyNormal || ev->detail == NotifyInferior) && ev->window != root)
 		return;
@@ -2233,8 +2328,8 @@ focusstack(const Arg *arg)
 Atom
 getatomprop(Client *c, Atom prop, Atom req)
 {
-	int di;
-	unsigned long dl;
+	int format;
+	unsigned long nitems, dl;
 	unsigned char *p = NULL;
 	Atom da, atom = None;
 
@@ -2246,11 +2341,12 @@ getatomprop(Client *c, Atom prop, Atom req)
 	/* FIXME getatomprop should return the number of items and a pointer to
 	 * the stored data instead of this workaround */
 	if (XGetWindowProperty(dpy, c->win, prop, 0L, sizeof atom, False, req,
-		&da, &di, &dl, &dl, &p) == Success && p) {
-		atom = *(Atom *)p;
+		&da, &format, &nitems, &dl, &p) == Success && p) {
+		if (nitems > 0 && format == 32)
+			atom = *(long *)p;
 		#if BAR_SYSTRAY_PATCH
 		if (da == xatom[XembedInfo] && dl == 2)
-			atom = ((Atom *)p)[1];
+			atom = ((long *)p)[1];
 		#endif // BAR_SYSTRAY_PATCH
 		XFree(p);
 	}
@@ -2263,6 +2359,14 @@ getrootptr(int *x, int *y)
 	int di;
 	unsigned int dui;
 	Window dummy;
+
+	#if BANISH_PATCH
+	if (cursor_hidden) {
+		*x = mouse_x;
+		*y = mouse_y;
+		return 1;
+	}
+	#endif // BANISH_PATCH
 
 	return XQueryPointer(dpy, root, &dummy, &dummy, x, y, &di, &di, &dui);
 }
@@ -2277,10 +2381,10 @@ getstate(Window w)
 	Atom real;
 
 	if (XGetWindowProperty(dpy, w, wmatom[WMState], 0L, 2L, False, wmatom[WMState],
-		&real, &format, &n, &extra, (unsigned char **)&p) != Success)
+		&real, &format, &n, &extra, &p) != Success)
 		return -1;
-	if (n != 0)
-		result = *p;
+	if (n != 0 && format == 32)
+		result = *(long *)p;
 	XFree(p);
 	return result;
 }
@@ -2731,7 +2835,7 @@ maprequest(XEvent *e)
 	#if BAR_SYSTRAY_PATCH
 	Client *i;
 	if (showsystray && systray && (i = wintosystrayicon(ev->window))) {
-		sendevent(i->win, netatom[Xembed], StructureNotifyMask, CurrentTime, XEMBED_WINDOW_ACTIVATE, 0, systray->win, XEMBED_EMBEDDED_VERSION);
+		sendevent(i->win, xatom[Xembed], StructureNotifyMask, CurrentTime, XEMBED_WINDOW_ACTIVATE, 0, systray->win, XEMBED_EMBEDDED_VERSION);
 		drawbarwin(systray->bar);
 	}
 	#endif // BAR_SYSTRAY_PATCH
@@ -2826,7 +2930,7 @@ movemouse(const Arg *arg)
 			handler[ev.type](&ev);
 			break;
 		case MotionNotify:
-			if ((ev.xmotion.time - lasttime) <= (1000 / 60))
+			if ((ev.xmotion.time - lasttime) <= (1000 / refreshrate))
 				continue;
 			lasttime = ev.xmotion.time;
 
@@ -3165,7 +3269,7 @@ resizemouse(const Arg *arg)
 			handler[ev.type](&ev);
 			break;
 		case MotionNotify:
-			if ((ev.xmotion.time - lasttime) <= (1000 / 60))
+			if ((ev.xmotion.time - lasttime) <= (1000 / refreshrate))
 				continue;
 			lasttime = ev.xmotion.time;
 
@@ -3244,6 +3348,9 @@ restack(Monitor *m)
 	#if WARP_PATCH && FLEXTILE_DELUXE_LAYOUT
 	int n;
 	#endif // WARP_PATCH
+	#if ALWAYSONTOP_PATCH
+	Monitor *mon;
+	#endif // ALWAYSONTOP_PATCH
 
 	drawbar(m);
 	#if TAB_PATCH
@@ -3253,6 +3360,18 @@ restack(Monitor *m)
 		return;
 	if (m->sel->isfloating || !m->lt[m->sellt]->arrange)
 		XRaiseWindow(dpy, m->sel->win);
+
+	#if ALWAYSONTOP_PATCH
+	/* raise the aot windows */
+	for (mon = mons; mon; mon = mon->next) {
+		for (c = mon->clients; c; c = c->next) {
+			if (c->alwaysontop) {
+				XRaiseWindow(dpy, c->win);
+			}
+		}
+	}
+	#endif // ALWAYSONTOP_PATCH
+
 	if (m->lt[m->sellt]->arrange) {
 		wc.stack_mode = Below;
 		if (m->bar) {
@@ -3457,6 +3576,15 @@ sendmon(Client *c, Monitor *m)
 	attach(c);
 	#endif
 	attachstack(c);
+	#if !FAKEFULLSCREEN_PATCH
+	#if FAKEFULLSCREEN_CLIENT_PATCH
+	if (c->isfullscreen && c->fakefullscreen != 1)
+		resizeclient(c, m->mx, m->my, m->mw, m->mh);
+	#else
+	if (c->isfullscreen)
+		resizeclient(c, m->mx, m->my, m->mw, m->mh);
+	#endif // FAKEFULLSCREEN_CLIENT_PATCH
+	#endif // FAKEFULLSCREEN_PATCH
 	#if EXRESIZE_PATCH
 	if (oldm != m)
 		arrange(oldm);
@@ -3555,13 +3683,17 @@ setfocus(Client *c)
 {
 	if (!c->neverfocus) {
 		XSetInputFocus(dpy, c->win, RevertToPointerRoot, CurrentTime);
-		XChangeProperty(dpy, root, netatom[NetActiveWindow],
-			XA_WINDOW, 32, PropModeReplace,
-			(unsigned char *) &(c->win), 1);
 		#if XKB_PATCH
 		XkbLockGroup(dpy, XkbUseCoreKbd, c->xkb->group);
 		#endif // XKB_PATCH
 	}
+	XChangeProperty(dpy, root, netatom[NetActiveWindow], XA_WINDOW, 32,
+		PropModeReplace, (unsigned char *) &(c->win), 1);
+	#if GAMES_PATCH
+	if (c->isgame && c->isfullscreen)
+		unminimize(c);
+	#endif // GAMES_PATCH
+
 	#if BAR_SYSTRAY_PATCH
 	sendevent(c->win, wmatom[WMTakeFocus], NoEventMask, wmatom[WMTakeFocus], CurrentTime, 0, 0, 0);
 	#else
@@ -3573,6 +3705,7 @@ setfocus(Client *c)
 void
 setfullscreen(Client *c, int fullscreen)
 {
+	Monitor *m = c->mon;
 	XEvent ev;
 	int savestate = 0, restorestate = 0;
 
@@ -3623,12 +3756,12 @@ setfullscreen(Client *c, int fullscreen)
 	} else if (restorestate && (c->oldstate & (1 << 1))) {
 		c->bw = c->oldbw;
 		c->isfloating = c->oldstate = c->oldstate & 1;
-		c->x = c->oldx;
-		c->y = c->oldy;
-		c->w = c->oldw;
-		c->h = c->oldh;
+		c->x = MAX(m->mx, c->oldx);
+		c->y = MAX(m->my, c->oldy);
+		c->w = MIN(c->oldw, m->mw - (c->x - m->mx));
+		c->h = MIN(c->oldh, m->mh - (c->y - m->my));
 		resizeclient(c, c->x, c->y, c->w, c->h);
-		restack(c->mon);
+		arrange(m);
 	} else
 		resizeclient(c, c->x, c->y, c->w, c->h);
 
@@ -3639,7 +3772,7 @@ setfullscreen(Client *c, int fullscreen)
 	if (!c->isfullscreen)
 		while (XCheckMaskEvent(dpy, EnterWindowMask, &ev));
 }
-#else
+#elif FAKEFULLSCREEN_PATCH
 void
 setfullscreen(Client *c, int fullscreen)
 {
@@ -3647,32 +3780,43 @@ setfullscreen(Client *c, int fullscreen)
 		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
 			PropModeReplace, (unsigned char*)&netatom[NetWMFullscreen], 1);
 		c->isfullscreen = 1;
-		#if !FAKEFULLSCREEN_PATCH
-		c->oldbw = c->bw;
-		c->oldstate = c->isfloating;
-		c->bw = 0;
-		c->isfloating = 1;
-		resizeclient(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
-		XRaiseWindow(dpy, c->win);
-		#endif // !FAKEFULLSCREEN_PATCH
 	} else if (!fullscreen && c->isfullscreen){
 		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
 			PropModeReplace, (unsigned char*)0, 0);
 		c->isfullscreen = 0;
-		#if !FAKEFULLSCREEN_PATCH
+	}
+}
+#else
+void
+setfullscreen(Client *c, int fullscreen)
+{
+	Monitor *m = c->mon;
+
+	if (fullscreen && !c->isfullscreen) {
+		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
+			PropModeReplace, (unsigned char*)&netatom[NetWMFullscreen], 1);
+		c->isfullscreen = 1;
+		c->oldbw = c->bw;
+		c->oldstate = c->isfloating;
+		c->bw = 0;
+		c->isfloating = 1;
+		resizeclient(c, m->mx, m->my, m->mw, m->mh);
+		XRaiseWindow(dpy, c->win);
+	} else if (!fullscreen && c->isfullscreen){
+		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
+			PropModeReplace, (unsigned char*)0, 0);
+		c->isfullscreen = 0;
 		c->bw = c->oldbw;
 		c->isfloating = c->oldstate;
-		c->x = c->oldx;
-		c->y = c->oldy;
-		c->w = c->oldw;
-		c->h = c->oldh;
+		c->x = MAX(m->mx, c->oldx);
+		c->y = MAX(m->my, c->oldy);
+		c->w = MIN(c->oldw, m->mw - (c->x - m->mx));
+		c->h = MIN(c->oldh, m->mh - (c->y - m->my));
 		resizeclient(c, c->x, c->y, c->w, c->h);
-		arrange(c->mon);
-		#endif // !FAKEFULLSCREEN_PATCH
+		arrange(m);
 	}
-	#if FAKEFULLSCREEN_PATCH
+
 	resizeclient(c, c->x, c->y, c->w, c->h);
-	#endif // FAKEFULLSCREEN_PATCH
 }
 #endif // FAKEFULLSCREEN_CLIENT_PATCH
 
@@ -3883,9 +4027,12 @@ setup(void)
 	cursor[CurResizeHorzArrow] = drw_cur_create(drw, XC_sb_h_double_arrow);
 	cursor[CurResizeVertArrow] = drw_cur_create(drw, XC_sb_v_double_arrow);
 	#endif // DRAGMFACT_PATCH
-	#if DRAGCFACT_PATCH
+	#if DRAGCFACT_PATCH && CFACTS_PATCH
 	cursor[CurIronCross] = drw_cur_create(drw, XC_iron_cross);
 	#endif // DRAGCFACT_PATCH
+	#if DRAGFACT_PATCH && CFACTS_PATCH
+	cursor[CurDragFact] = drw_cur_create(drw, XC_rightbutton);
+	#endif // DRAGFACT_PATCH
 	cursor[CurMove] = drw_cur_create(drw, XC_fleur);
 	/* init appearance */
 	#if BAR_VTCOLORS_PATCH
@@ -3970,6 +4117,26 @@ setup(void)
 	XkbGetState(dpy, XkbUseCoreKbd, &xkbstate);
 	xkbGlobal.group = xkbstate.locked_group;
 	#endif // XKB_PATCH
+
+	#if BANISH_PATCH
+	if (!XQueryExtension(dpy, "XInputExtension", &xi_opcode, &i, &i)) {
+		fprintf(stderr, "Warning: XInput is not available.");
+	}
+	/* Tell XInput to send us all RawMotion events. */
+	unsigned char mask_bytes[XIMaskLen(XI_LASTEVENT)];
+	memset(mask_bytes, 0, sizeof(mask_bytes));
+	XISetMask(mask_bytes, XI_RawMotion);
+	XISetMask(mask_bytes, XI_RawKeyRelease);
+	XISetMask(mask_bytes, XI_RawTouchBegin);
+	XISetMask(mask_bytes, XI_RawTouchEnd);
+	XISetMask(mask_bytes, XI_RawTouchUpdate);
+
+	XIEventMask mask;
+	mask.deviceid = XIAllMasterDevices;
+	mask.mask_len = sizeof(mask_bytes);
+	mask.mask = mask_bytes;
+	XISelectEvents(dpy, root, &mask, 1);
+	#endif // BANISH_PATCH
 
 	grabkeys();
 	focus(NULL);
@@ -4324,7 +4491,13 @@ togglefloating(const Arg *arg)
 		c->sfy = c->y;
 		c->sfw = c->w;
 		c->sfh = c->h;
-	#endif // SAVEFLOATS_PATCH / EXRESIZE_PATCH
+		#if ALWAYSONTOP_PATCH
+		c->alwaysontop = 0;
+		#endif // ALWAYSONTOP_PATCH
+	#elif ALWAYSONTOP_PATCH
+	} else {
+		c->alwaysontop = 0;
+	#endif // SAVEFLOATS_PATCH | EXRESIZE_PATCH | ALWAYSONTOP_PATCH
 	}
 	arrange(c->mon);
 
@@ -4467,9 +4640,18 @@ unfocus(Client *c, int setfocus, Client *nextfocus)
 {
 	if (!c)
 		return;
+
 	#if SWAPFOCUS_PATCH && PERTAG_PATCH
 	selmon->pertag->prevclient[selmon->pertag->curtag] = c;
 	#endif // SWAPFOCUS_PATCH
+	#if GAMES_PATCH
+	if (c->isgame && c->isfullscreen) {
+		minimize(c);
+	}
+	#endif // GAMES_PATCH
+	#if GAMES_PATCH && LOSEFULLSCREEN_PATCH
+	else
+	#endif // GAMES_PATCH | LOSEFULLSCREEN_PATCH
 	#if LOSEFULLSCREEN_PATCH
 	if (c->isfullscreen && ISVISIBLE(c) && c->mon == selmon && nextfocus && !nextfocus->isfloating) {
 		#if RENAMED_SCRATCHPADS_PATCH && RENAMED_SCRATCHPADS_AUTO_HIDE_PATCH
@@ -4799,6 +4981,12 @@ updatebarpos(Monitor *m)
 	for (bar = m->bar; bar; bar = bar->next) {
 		if (!bar->showbar)
 			continue;
+		#if BAR_HOLDBAR_PATCH
+		if (m->showbar == 2) {
+			bar->by = (bar->topbar ? m->wy : m->wy + m->wh - bar->bh);
+			continue;
+		}
+		#endif // BAR_HOLDBAR_PATCH
 		if (bar->topbar)
 			m->wy = m->wy + bar->bh + y_pad;
 		m->wh -= y_pad + bar->bh;
